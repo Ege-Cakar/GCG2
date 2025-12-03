@@ -1,0 +1,3 @@
+Step: 0
+Loss: 2.166015625
+Suffix: <unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk><unk>
