@@ -55,8 +55,52 @@ def load_data(advbench_path="advbench_prompts.txt", refusal_path="refusal_substr
         
     return prompts, refusals
 
+# --- UTILS FOR VARIANT 2 ---
+def get_temperature_schedule(step, total_steps):
+    """50/25/25 Schedule for Soft Opt (from soft_2.py)"""
+    ratio = step / total_steps
+    if ratio < 0.5:
+        p = ratio / 0.5
+        return 2.5 - (1.5 * p) # 2.5 -> 1.0
+    elif ratio < 0.75:
+        p = (ratio - 0.5) / 0.25
+        return 1.0 - (0.5 * p) # 1.0 -> 0.5
+    else:
+        p = (ratio - 0.75) / 0.25
+        return 0.5 * (0.01 / 0.5) ** p # 0.5 -> 0.01
+
+def carlini_wagner_loss(logits, target_ids, attention_mask, confidence=5.0):
+    """
+    CW Loss adapted for batches with padding.
+    target_ids: [Batch, Seq]
+    attention_mask: [Batch, Seq] (1 for valid, 0 for pad)
+    """
+    batch_size = logits.shape[0]
+    
+    # Gather logits for target class
+    # logits: [Batch, Seq, Vocab]
+    target_logits = torch.gather(logits, 2, target_ids.unsqueeze(2)).squeeze(2)
+    
+    # Mask out target logits for "other" max calculation
+    target_one_hot = F.one_hot(target_ids, num_classes=logits.size(-1))
+    other_logits = logits - (target_one_hot * 1e4)
+    second_best_logits, _ = other_logits.max(dim=2)
+    
+    # CW Loss per token
+    loss = torch.clamp(second_best_logits - target_logits + confidence, min=0.0)
+    
+    # Weight first token heavily (from soft_2.py)
+    weights = torch.ones_like(loss)
+    weights[:, 0] = 5.0 
+    
+    # Apply Mask (ignore padding)
+    loss = loss * weights * attention_mask
+    
+    # Mean over valid tokens
+    return loss.sum(dim=1) / attention_mask.sum(dim=1)
+
 # --- S-GCG LOGIC (Pure Soft) ---
-def run_soft(model, tokenizer, embed_weights, steps=DEFAULT_STEPS, batch_size=10):
+def run_soft(model, tokenizer, embed_weights, steps=DEFAULT_STEPS, batch_size=10, use_variant2=False):
     # We need a dummy batch to optimize against. 
     # In sweep_script, it used a set of training prompts.
     # Here, we will use a generic harmful prompt for optimization to find a universal suffix.
@@ -100,7 +144,7 @@ def run_soft(model, tokenizer, embed_weights, steps=DEFAULT_STEPS, batch_size=10
         'sizes': (p.input_ids.shape[1], SUFFIX_LEN, t.input_ids.shape[1])
     }
 
-    logging.info(f"Starting Soft Phase: {steps} steps")
+    logging.info(f"Starting Soft Phase: {steps} steps (Variant 2: {use_variant2})")
     
     # Init Soft Suffix
     soft_logits = torch.zeros(1, SUFFIX_LEN, embed_weights.shape[0], device=DEVICE, dtype=torch.float32)
@@ -113,7 +157,11 @@ def run_soft(model, tokenizer, embed_weights, steps=DEFAULT_STEPS, batch_size=10
     
     for i in range(steps):
         # Temp Annealing
-        temp = 2.0 - (1.9 * (i/steps))
+        if use_variant2:
+            temp = get_temperature_schedule(i, steps)
+        else:
+            temp = 2.0 - (1.9 * (i/steps))
+            
         optimizer.zero_grad()
         
         probs = F.gumbel_softmax(soft_logits, tau=temp, hard=False, dim=-1)
@@ -130,9 +178,16 @@ def run_soft(model, tokenizer, embed_weights, steps=DEFAULT_STEPS, batch_size=10
         end = start + batch['sizes'][2]
         
         # Loss
-        loss = nn.CrossEntropyLoss(ignore_index=-100)(
-            logits[:, start:end, :].permute(0,2,1), batch['t_ids_loss']
-        )
+        prediction_logits = logits[:, start:end, :].permute(0,2,1) if not use_variant2 else logits[:, start:end, :]
+        
+        if use_variant2:
+            # CW Loss
+            loss = carlini_wagner_loss(prediction_logits, batch['t_ids'], batch['t_mask']).mean()
+        else:
+            # CE Loss
+            loss = nn.CrossEntropyLoss(ignore_index=-100)(
+                prediction_logits, batch['t_ids_loss']
+            )
         
         loss.backward()
         torch.nn.utils.clip_grad_norm_([soft_logits], 1.0)
@@ -199,6 +254,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, required=True, help="Model key (e.g., gemma3:270m)")
     parser.add_argument("--smoke-test", action="store_true", help="Run fast smoke test")
+    parser.add_argument("--2", dest="variant2", action="store_true", help="Use Variant 2 (CW Loss + 3-Phase Annealing)")
     args = parser.parse_args()
     
     if args.model not in MODEL_MAPPING:
@@ -231,13 +287,13 @@ def main():
     pd.DataFrame(columns=["Run_ID", "Suffix", "ASR"]).to_csv(csv_path, index=False)
     
     steps = 5 if args.smoke_test else DEFAULT_STEPS
-    num_runs = 1 if args.smoke_test else 5
+    num_runs = 1 if args.smoke_test else 1
     
     for run_id in range(1, num_runs + 1):
         logging.info(f"--- Run {run_id}/{num_runs} ---")
         
         # 1. Optimize Suffix
-        suffix = run_soft(model, tokenizer, embed_weights, steps=steps)
+        suffix = run_soft(model, tokenizer, embed_weights, steps=steps, use_variant2=args.variant2)
         logging.info(f"Optimized Suffix: {suffix}")
         
         # 2. Evaluate
