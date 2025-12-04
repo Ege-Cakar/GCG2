@@ -1,0 +1,6 @@
+2025-12-04 00:37:44,540 - INFO - Loading Model: google/gemma-3-12b-it
+2025-12-04 00:38:00,114 - INFO - We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+2025-12-04 00:38:03,047 - INFO - Loaded 520 prompts and 12 refusal substrings.
+2025-12-04 00:38:03,053 - INFO - --- Run 1/10 ---
+2025-12-04 00:38:03,099 - INFO - Starting Soft Phase: 500 steps
+2025-12-04 00:38:04,159 - INFO - Soft Step 0/500 | Loss: 4.8438 | T: 2.00

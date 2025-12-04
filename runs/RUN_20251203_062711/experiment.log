@@ -1,0 +1,15 @@
+2025-12-03 06:27:11,357 - INFO - Starting Experiment. Results dir: runs/RUN_20251203_062711
+2025-12-03 06:27:11,357 - INFO - Loading Model...
+2025-12-03 06:27:11,820 - INFO - We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+2025-12-03 06:27:12,727 - INFO - --- RUNNING CONFIG: Baseline (Pure GCG) (0/500) ---
+2025-12-03 06:27:12,727 - INFO - Skipping Soft Phase (Steps=0)
+2025-12-03 06:27:12,909 - INFO - Starting GCG Phase: 500 steps
+2025-12-03 06:27:16,600 - INFO - GCG Step 0/500 | Loss: 0.9849
+2025-12-03 06:27:50,498 - INFO - GCG Step 10/500 | Loss: 0.6079
+2025-12-03 06:28:24,787 - INFO - GCG Step 20/500 | Loss: 0.5908
+2025-12-03 06:28:59,305 - INFO - GCG Step 30/500 | Loss: 0.5117
+2025-12-03 06:29:33,912 - INFO - GCG Step 40/500 | Loss: 0.4800
+2025-12-03 06:30:08,567 - INFO - GCG Step 50/500 | Loss: 0.4758
+2025-12-03 06:30:43,256 - INFO - GCG Step 60/500 | Loss: 0.4856
+2025-12-03 06:31:17,948 - INFO - GCG Step 70/500 | Loss: 0.4851
+2025-12-03 06:31:52,595 - INFO - GCG Step 80/500 | Loss: 0.4517
